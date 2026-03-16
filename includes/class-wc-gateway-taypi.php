@@ -45,8 +45,9 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
         $this->title                = $this->get_option('title');
         $this->description          = $this->get_option('description');
         $this->taypi_environment    = $this->get_option('environment', 'sandbox');
-        $this->taypi_public_key     = $this->taypi_environment === 'production' ? $this->get_option('live_public_key') : $this->get_option('test_public_key');
-        $this->taypi_secret_key     = $this->taypi_environment === 'production' ? $this->get_option('live_secret_key') : $this->get_option('test_secret_key');
+        $key_prefix = $this->taypi_environment === 'production' ? 'live' : ($this->taypi_environment === 'custom' ? 'custom' : 'test');
+        $this->taypi_public_key     = $this->get_option($key_prefix . '_public_key', '');
+        $this->taypi_secret_key     = $this->get_option($key_prefix . '_secret_key', '');
         $this->taypi_webhook_secret = $this->get_option('webhook_secret');
         $this->taypi_debug          = $this->get_option('debug');
 
@@ -62,6 +63,9 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
         // AJAX para crear sesión de checkout
         add_action('wp_ajax_taypi_create_session', [$this, 'ajax_create_session']);
         add_action('wp_ajax_nopriv_taypi_create_session', [$this, 'ajax_create_session']);
+
+        // JS para ocultar/mostrar campos en admin
+        add_action('admin_footer', [$this, 'admin_toggle_fields_js']);
     }
 
     /**
@@ -94,7 +98,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
             'environment' => [
                 'title'       => 'Entorno',
                 'type'        => 'select',
-                'description' => 'Selecciona el entorno de TAYPI.',
+                'description' => 'Selecciona el entorno de TAYPI. Cada entorno usa sus propias credenciales.',
                 'default'     => 'sandbox',
                 'options'     => [
                     'production' => 'Producción (app.taypi.pe)',
@@ -105,31 +109,58 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
             'custom_url' => [
                 'title'       => 'URL personalizada',
                 'type'        => 'text',
-                'description' => 'URL del entorno personalizado (ej: https://dev.taypi.pe). Solo visible si el entorno es "Personalizado".',
+                'description' => 'URL base del entorno personalizado (incluir https://).',
                 'default'     => '',
             ],
+            'section_production' => [
+                'title'       => 'Credenciales de Producción',
+                'type'        => 'title',
+                'description' => 'Claves para el entorno de producción (app.taypi.pe).',
+            ],
             'live_public_key' => [
-                'title'       => 'Public Key (producción)',
+                'title'       => 'Public Key',
                 'type'        => 'text',
                 'description' => 'Clave pública de producción (taypi_pk_live_...).',
                 'default'     => '',
             ],
             'live_secret_key' => [
-                'title'       => 'Secret Key (producción)',
+                'title'       => 'Secret Key',
                 'type'        => 'password',
                 'description' => 'Clave secreta de producción. Nunca la compartas.',
                 'default'     => '',
             ],
+            'section_sandbox' => [
+                'title'       => 'Credenciales de Sandbox',
+                'type'        => 'title',
+                'description' => 'Claves para el entorno de pruebas (sandbox.taypi.pe).',
+            ],
             'test_public_key' => [
-                'title'       => 'Public Key (sandbox)',
+                'title'       => 'Public Key',
                 'type'        => 'text',
                 'description' => 'Clave pública de sandbox (taypi_pk_test_...).',
                 'default'     => '',
             ],
             'test_secret_key' => [
-                'title'       => 'Secret Key (sandbox)',
+                'title'       => 'Secret Key',
                 'type'        => 'password',
                 'description' => 'Clave secreta de sandbox.',
+                'default'     => '',
+            ],
+            'section_custom' => [
+                'title'       => 'Credenciales Personalizadas',
+                'type'        => 'title',
+                'description' => 'Claves para el entorno personalizado.',
+            ],
+            'custom_public_key' => [
+                'title'       => 'Public Key',
+                'type'        => 'text',
+                'description' => 'Clave pública del entorno personalizado.',
+                'default'     => '',
+            ],
+            'custom_secret_key' => [
+                'title'       => 'Secret Key',
+                'type'        => 'password',
+                'description' => 'Clave secreta del entorno personalizado.',
                 'default'     => '',
             ],
             'webhook_secret' => [
@@ -475,6 +506,48 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
         }
 
         return $this->taypi_client;
+    }
+
+    /**
+     * JS para ocultar/mostrar campos según entorno seleccionado.
+     */
+    public function admin_toggle_fields_js()
+    {
+        if (! isset($_GET['section']) || $_GET['section'] !== 'taypi') {
+            return;
+        }
+        ?>
+        <script type="text/javascript">
+        (function($) {
+            function toggleTaypiFields() {
+                var env = $('#woocommerce_taypi_environment').val();
+
+                // Custom URL
+                $('#woocommerce_taypi_custom_url').closest('tr').toggle(env === 'custom');
+
+                // Secciones de credenciales
+                // Production
+                $('[id="woocommerce_taypi_section_production"]').closest('table').prev('h3').toggle(env === 'production');
+                $('[id="woocommerce_taypi_section_production"]').closest('table').prev('p').toggle(env === 'production');
+                $('#woocommerce_taypi_live_public_key').closest('tr').toggle(env === 'production');
+                $('#woocommerce_taypi_live_secret_key').closest('tr').toggle(env === 'production');
+
+                // Sandbox
+                $('#woocommerce_taypi_test_public_key').closest('tr').toggle(env === 'sandbox');
+                $('#woocommerce_taypi_test_secret_key').closest('tr').toggle(env === 'sandbox');
+
+                // Custom
+                $('#woocommerce_taypi_custom_public_key').closest('tr').toggle(env === 'custom');
+                $('#woocommerce_taypi_custom_secret_key').closest('tr').toggle(env === 'custom');
+            }
+
+            $(document).ready(function() {
+                toggleTaypiFields();
+                $('#woocommerce_taypi_environment').on('change', toggleTaypiFields);
+            });
+        })(jQuery);
+        </script>
+        <?php
     }
 
     /**

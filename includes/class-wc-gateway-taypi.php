@@ -184,29 +184,29 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
      */
     public function is_available()
     {
+        $logger = wc_get_logger();
+
         if ($this->enabled !== 'yes') {
+            $logger->error('TAYPI is_available: DISABLED', ['source' => 'taypi-woocommerce']);
             return false;
         }
 
         if (empty($this->taypi_public_key) || empty($this->taypi_secret_key)) {
+            $logger->error('TAYPI is_available: KEYS EMPTY. env=' . $this->taypi_environment . ' pk=' . (empty($this->taypi_public_key) ? 'EMPTY' : 'SET') . ' sk=' . (empty($this->taypi_secret_key) ? 'EMPTY' : 'SET'), ['source' => 'taypi-woocommerce']);
             return false;
         }
 
-        // Solo PEN
         if (get_woocommerce_currency() !== 'PEN') {
+            $logger->error('TAYPI is_available: CURRENCY=' . get_woocommerce_currency(), ['source' => 'taypi-woocommerce']);
             return false;
         }
 
-        // Monto máximo permitido por QR interoperable: S/1,500
         if (WC()->cart && WC()->cart->get_total('edit') > 1500) {
+            $logger->error('TAYPI is_available: CART EXCEEDS 1500', ['source' => 'taypi-woocommerce']);
             return false;
         }
 
-        // SSL obligatorio en producción
-        if ($this->taypi_environment === 'production' && ! is_ssl()) {
-            return false;
-        }
-
+        $logger->info('TAYPI is_available: OK', ['source' => 'taypi-woocommerce']);
         return true;
     }
 
@@ -225,11 +225,18 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
             echo wpautop(wp_kses_post($this->description));
         }
 
-        echo '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;">'
-            . '<img src="' . esc_url(TAYPI_WC_PLUGIN_URL . 'assets/images/yape.svg') . '" alt="Yape" height="28">'
-            . '<img src="' . esc_url(TAYPI_WC_PLUGIN_URL . 'assets/images/plin.svg') . '" alt="Plin" height="28">'
-            . '<span style="font-size:12px;color:#71717a;">y más</span>'
-            . '</div>';
+        require_once TAYPI_WC_PLUGIN_DIR . 'includes/taypi-wallet-logos.php';
+        $logos = taypi_get_wallet_logos();
+
+        echo '<div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap;">';
+        foreach ($logos as $wallet) {
+            if (! empty($wallet['src'])) {
+                echo '<img src="' . esc_attr($wallet['src']) . '" alt="' . esc_attr($wallet['name']) . '" '
+                    . 'style="height:32px;width:32px;border-radius:8px;object-fit:cover;" />';
+            }
+        }
+        echo '<span style="font-size:12px;color:#71717a;">y más</span>';
+        echo '</div>';
     }
 
     /**
@@ -291,48 +298,77 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
      */
     public function process_payment($order_id)
     {
+        $this->log('=== process_payment START === order_id=' . $order_id);
+        $this->log('process_payment: environment=' . $this->taypi_environment);
+        $this->log('process_payment: base_url=' . $this->get_base_url());
+        $this->log('process_payment: public_key=' . substr($this->taypi_public_key, 0, 20) . '...');
+
         $order = wc_get_order($order_id);
 
         if (! $order) {
+            $this->log('process_payment: ERROR - order not found');
             wc_add_notice('Orden no encontrada.', 'error');
             return ['result' => 'failure'];
         }
 
+        $this->log('process_payment: order total=' . $order->get_total() . ' currency=' . $order->get_currency());
+
         try {
             $client = $this->get_client();
+            $this->log('process_payment: SDK client created OK');
 
             $reference = (string) $order->get_id();
+            $amount = number_format((float) $order->get_total(), 2, '.', '');
+            $description = sprintf('Orden #%s — %s', $order->get_order_number(), get_bloginfo('name'));
+
+            $this->log('process_payment: calling createCheckoutSession amount=' . $amount . ' reference=' . $reference);
 
             $session = $client->createCheckoutSession([
-                'amount'      => number_format((float) $order->get_total(), 2, '.', ''),
+                'amount'      => $amount,
                 'reference'   => $reference,
-                'description' => sprintf('Orden #%s — %s', $order->get_order_number(), get_bloginfo('name')),
+                'description' => $description,
             ], 'wc-' . $reference);
+
+            $this->log('process_payment: API response = ' . wp_json_encode($session));
 
             $checkout_token = $session['checkout_token'] ?? '';
 
             if (empty($checkout_token)) {
+                $this->log('process_payment: ERROR - empty checkout_token');
                 throw new \Taypi\TaypiException('No se recibió token de checkout.', 'EMPTY_TOKEN');
             }
+
+            $this->log('process_payment: checkout_token = ' . $checkout_token);
 
             // Guardar metadata
             $order->update_meta_data('_taypi_checkout_token', $checkout_token);
             $order->update_meta_data('_taypi_environment', $this->taypi_environment);
             $order->save();
+            $this->log('process_payment: order meta saved');
 
             // Reducir stock y vaciar carrito se hace cuando el webhook confirma el pago
             $order->update_status('pending', 'Esperando pago QR via TAYPI.');
+            $this->log('process_payment: order status set to pending');
 
-            $this->log('Sesión creada para orden #' . $order->get_order_number() . ': ' . $checkout_token);
+            $return_url = $this->get_return_url($order);
+            $this->log('process_payment: return_url = ' . $return_url);
 
-            return [
+            $response = [
                 'result'   => 'success',
-                'redirect' => false,
+                'redirect' => $return_url,
                 'taypi'    => [
                     'checkout_token' => $checkout_token,
-                    'return_url'     => $this->get_return_url($order),
+                    'return_url'     => $return_url,
+                ],
+                'payment_details' => [
+                    'checkout_token' => $checkout_token,
                 ],
             ];
+
+            $this->log('process_payment: returning response = ' . wp_json_encode($response));
+            $this->log('=== process_payment END ===');
+
+            return $response;
         } catch (\Taypi\TaypiException $e) {
             $this->log('Error creando sesión: ' . $e->getMessage() . ' (' . $e->errorCode . ')');
             wc_add_notice('Error al crear el pago: ' . esc_html($e->getMessage()), 'error');
@@ -557,7 +593,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
     {
         if ($this->taypi_debug === 'yes') {
             $logger = wc_get_logger();
-            $logger->info($message, ['source' => 'taypi']);
+            $logger->info($message, ['source' => 'taypi-woocommerce']);
         }
     }
 }

@@ -26,9 +26,21 @@ Cliente elige "Pago QR" → Se muestra QR en modal → Escanea con Yape/Plin →
 ```
 
 1. El cliente selecciona **"Pago QR — Yape, Plin y mas"** en el checkout
-2. Se abre un modal con un codigo QR dinamico (EMVCo)
-3. El cliente escanea desde **Yape, Plin o cualquier app bancaria**
-4. El pago se confirma en tiempo real y la orden se procesa automaticamente
+2. Hace click en **"Pagar con QR"**
+3. Se abre un modal con un codigo QR dinamico (EMVCo)
+4. El cliente escanea desde **Yape, Plin o cualquier app bancaria**
+5. El pago se confirma en tiempo real, la orden se marca como pagada y redirige a la pagina de gracias
+
+## Checkout Blocks y Clasico
+
+El plugin funciona con **ambas versiones** del checkout de WooCommerce:
+
+| Checkout | Soporte | Archivo JS |
+|---|---|---|
+| **Checkout Blocks** (Gutenberg) | ✅ Completo | `taypi-blocks.js` |
+| **Checkout Clasico** (shortcode) | ✅ Completo | `taypi-checkout.js` |
+
+La deteccion es automatica. No requiere configuracion adicional.
 
 ## Requisitos
 
@@ -51,7 +63,6 @@ Cliente elige "Pago QR" → Se muestra QR en modal → Escanea con Yape/Plin →
 ### Manual
 
 ```bash
-# Descargar y copiar al directorio de plugins
 cd wp-content/plugins/
 git clone https://github.com/neoevsys/taypi-woocommerce.git
 cd taypi-woocommerce
@@ -66,14 +77,29 @@ composer require taypi/taypi-woocommerce
 
 ## Configuracion
 
+### Entornos
+
+El plugin soporta 3 entornos, cada uno con sus propias credenciales:
+
+| Entorno | URL | Uso |
+|---|---|---|
+| **Produccion** | app.taypi.pe | Cobros reales |
+| **Sandbox** | sandbox.taypi.pe | Pruebas sin cobros |
+| **Personalizado** | URL configurable | Desarrollo interno |
+
+Al seleccionar un entorno, solo se muestran los campos de credenciales correspondientes.
+
+### Campos de configuracion
+
 | Campo | Descripcion |
 |---|---|
 | **Activar** | Habilita TAYPI como metodo de pago |
 | **Titulo** | Nombre visible en el checkout (default: "Pago QR — Yape, Plin y mas") |
-| **Modo sandbox** | Usa el entorno de pruebas sin cobros reales |
-| **Public Key** | Clave publica de tu cuenta TAYPI |
-| **Secret Key** | Clave secreta (nunca se comparte) |
+| **Entorno** | Produccion, Sandbox o Personalizado |
+| **Public Key** | Clave publica del entorno seleccionado |
+| **Secret Key** | Clave secreta del entorno seleccionado |
 | **Webhook Secret** | Secret para verificar notificaciones de pago |
+| **Log de depuracion** | Activa logging en PHP y JS |
 
 ### Webhook
 
@@ -86,25 +112,42 @@ https://tutienda.com/wc-api/taypi_webhook/
 ## Arquitectura
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  WooCommerce Checkout                                   │
-│                                                         │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────┐  │
-│  │  Gateway     │───>│ taypi-php   │───>│ TAYPI API  │  │
-│  │  (PHP)       │    │ SDK         │    │            │  │
-│  └─────────────┘    └──────────────┘    └────────────┘  │
-│         │                                      │        │
-│         v                                      v        │
-│  ┌─────────────┐                      ┌────────────┐   │
-│  │ checkout.js  │                      │  Webhook   │   │
-│  │ (CDN modal)  │                      │  Handler   │   │
-│  └─────────────┘                      └────────────┘   │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  WooCommerce Checkout (Blocks o Clasico)                     │
+│                                                              │
+│  ┌──────────────┐    ┌──────────────┐    ┌───────────────┐   │
+│  │ Store API /   │───>│ taypi-php   │───>│  TAYPI API    │   │
+│  │ Gateway (PHP) │    │ SDK         │    │               │   │
+│  └──────────────┘    └──────────────┘    └───────────────┘   │
+│         │                                       │            │
+│         v                                       v            │
+│  ┌──────────────┐                      ┌───────────────┐     │
+│  │ checkout.js   │                      │  Webhook /    │     │
+│  │ (CDN modal)   │                      │  AJAX mark    │     │
+│  └──────────────┘                      └───────────────┘     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 - **Backend:** Usa el [SDK PHP de TAYPI](https://github.com/neoevsys/taypi-php) (`taypi/taypi-php`) para crear sesiones de pago
-- **Frontend:** Usa `checkout.js` desde CDN para mostrar el modal con QR
-- **Webhooks:** Confirmacion automatica de pago via firma HMAC-SHA256
+- **Frontend Blocks:** `taypi-blocks.js` registra el metodo en `wcBlocksRegistry`, maneja `onPaymentSetup` y `onCheckoutSuccess` para abrir el modal QR
+- **Frontend Clasico:** `taypi-checkout.js` intercepta el checkout via jQuery y abre el modal
+- **Modal QR:** `checkout.js` desde CDN de TAYPI renderiza el QR y detecta el pago
+- **Confirmacion:** AJAX `taypi_mark_paid` marca la orden como pagada + webhook como respaldo
+
+## Flujo de pago (Checkout Blocks)
+
+```
+1. Cliente click "Pagar con QR"
+2. onPaymentSetup → envia payment_method: taypi
+3. Store API hook → crea sesion TAYPI via SDK → obtiene checkout_token
+4. set_payment_details({ checkout_token }) → llega al JS
+5. onCheckoutSuccess → lee checkout_token de processingResponse
+6. Taypi.open({ sessionToken }) → muestra modal con QR
+7. Cliente escanea QR con Yape/Plin
+8. Modal detecta pago → onSuccess
+9. AJAX taypi_mark_paid → orden marcada como pagada
+10. Redirect a pagina de gracias
+```
 
 ## Limites
 
@@ -119,16 +162,19 @@ Si el carrito supera S/ 1,500, el metodo de pago TAYPI no se muestra en el check
 
 ## Depuracion
 
-Activa el **Log de depuracion** en la configuracion del plugin. Los logs se guardan en:
+Activa el **Log de depuracion** en la configuracion del plugin. Cuando esta activo:
 
-**WooCommerce > Estado > Registros > taypi**
+- **PHP:** Registra cada paso en **WooCommerce > Estado > Registros > taypi-woocommerce**
+- **JS:** Registra en la consola del navegador con prefijo `[TAYPI]`
+
+Cuando esta desactivado, no se genera ningun log.
 
 ## Compatibilidad
 
+- [x] WooCommerce Checkout Blocks (Gutenberg)
+- [x] WooCommerce Checkout Clasico (shortcode)
 - [x] WooCommerce HPOS (High-Performance Order Storage)
-- [x] WooCommerce Checkout clasico
 - [x] WordPress Multisite
-- [ ] WooCommerce Checkout Blocks (proximamente)
 
 ## Desarrollo
 
@@ -142,7 +188,7 @@ composer install
 
 1. Actualiza la version en `taypi-woocommerce.php` y `readme.txt`
 2. Commit y push
-3. Crea un tag: `git tag 1.0.1 && git push origin 1.0.1`
+3. Crea un tag: `git tag 1.0.2 && git push origin 1.0.2`
 4. GitHub Actions despliega automaticamente a WordPress.org
 
 ## Licencia

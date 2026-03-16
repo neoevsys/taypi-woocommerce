@@ -13,22 +13,22 @@ defined('ABSPATH') || exit;
 class WC_Gateway_Taypi extends WC_Payment_Gateway
 {
     /** @var string Entorno: production, sandbox, custom */
-    private string $environment;
+    private $taypi_environment = 'sandbox';
 
     /** @var string Clave pública TAYPI */
-    private string $public_key;
+    private $taypi_public_key = '';
 
     /** @var string Clave secreta TAYPI */
-    private string $secret_key;
+    private $taypi_secret_key = '';
 
     /** @var string Secret para verificar webhooks */
-    private string $webhook_secret;
+    private $taypi_webhook_secret = '';
 
     /** @var string Habilitar logging */
-    private string $debug;
+    private $taypi_debug = 'no';
 
-    /** @var \Taypi\Taypi|null Cliente SDK */
-    private ?\Taypi\Taypi $client = null;
+    /** @var object|null Cliente SDK */
+    private $taypi_client = null;
 
     public function __construct()
     {
@@ -42,13 +42,13 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
         $this->init_form_fields();
         $this->init_settings();
 
-        $this->title          = $this->get_option('title');
-        $this->description    = $this->get_option('description');
-        $this->environment    = $this->get_option('environment', 'sandbox');
-        $this->public_key     = $this->environment === 'production' ? $this->get_option('live_public_key') : $this->get_option('test_public_key');
-        $this->secret_key     = $this->environment === 'production' ? $this->get_option('live_secret_key') : $this->get_option('test_secret_key');
-        $this->webhook_secret = $this->get_option('webhook_secret');
-        $this->debug          = $this->get_option('debug');
+        $this->title                = $this->get_option('title');
+        $this->description          = $this->get_option('description');
+        $this->taypi_environment    = $this->get_option('environment', 'sandbox');
+        $this->taypi_public_key     = $this->taypi_environment === 'production' ? $this->get_option('live_public_key') : $this->get_option('test_public_key');
+        $this->taypi_secret_key     = $this->taypi_environment === 'production' ? $this->get_option('live_secret_key') : $this->get_option('test_secret_key');
+        $this->taypi_webhook_secret = $this->get_option('webhook_secret');
+        $this->taypi_debug          = $this->get_option('debug');
 
         // Guardar configuración
         add_action('woocommerce_update_options_payment_gateways_' . $this->id, [$this, 'process_admin_options']);
@@ -67,7 +67,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
     /**
      * Campos de configuración en WooCommerce > Ajustes > Pagos > TAYPI.
      */
-    public function init_form_fields(): void
+    public function init_form_fields()
     {
         $webhook_url = home_url('/wc-api/taypi_webhook/');
 
@@ -151,13 +151,13 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
     /**
      * Verificar disponibilidad del gateway.
      */
-    public function is_available(): bool
+    public function is_available()
     {
         if ($this->enabled !== 'yes') {
             return false;
         }
 
-        if (empty($this->public_key) || empty($this->secret_key)) {
+        if (empty($this->taypi_public_key) || empty($this->taypi_secret_key)) {
             return false;
         }
 
@@ -172,7 +172,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
         }
 
         // SSL obligatorio en producción
-        if ($this->environment === 'production' && ! is_ssl()) {
+        if ($this->taypi_environment === 'production' && ! is_ssl()) {
             return false;
         }
 
@@ -182,10 +182,10 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
     /**
      * Descripción + logos en el checkout.
      */
-    public function payment_fields(): void
+    public function payment_fields()
     {
-        if ($this->environment !== 'production') {
-            $env_label = $this->environment === 'sandbox' ? 'SANDBOX' : strtoupper($this->environment);
+        if ($this->taypi_environment !== 'production') {
+            $env_label = $this->taypi_environment === 'sandbox' ? 'SANDBOX' : strtoupper($this->taypi_environment);
             echo '<p style="background:#fff3cd;padding:8px 12px;border-radius:6px;font-size:13px;margin-bottom:12px;">'
                 . '⚠️ <strong>MODO ' . esc_html($env_label) . '</strong> — No se realizarán cobros reales.</p>';
         }
@@ -204,13 +204,13 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
     /**
      * Cargar scripts del checkout.
      */
-    public function payment_scripts(): void
+    public function payment_scripts()
     {
         if (! is_checkout() && ! isset($_GET['pay_for_order'])) {
             return;
         }
 
-        if ($this->enabled !== 'yes' || empty($this->public_key)) {
+        if ($this->enabled !== 'yes' || empty($this->taypi_public_key)) {
             return;
         }
 
@@ -237,7 +237,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
         wp_localize_script('taypi-checkout', 'taypi_params', [
             'ajax_url'   => admin_url('admin-ajax.php'),
             'nonce'      => wp_create_nonce('taypi_create_session'),
-            'public_key' => $this->public_key,
+            'public_key' => $this->taypi_public_key,
             'gateway_id' => $this->id,
             'return_url' => wc_get_checkout_url(),
             'i18n'       => [
@@ -258,7 +258,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
     /**
      * Procesar pago — crea la orden como "pending" y retorna datos para el JS.
      */
-    public function process_payment($order_id): array
+    public function process_payment($order_id)
     {
         $order = wc_get_order($order_id);
 
@@ -286,7 +286,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
 
             // Guardar metadata
             $order->update_meta_data('_taypi_checkout_token', $checkout_token);
-            $order->update_meta_data('_taypi_environment', $this->testmode === 'yes' ? 'sandbox' : 'production');
+            $order->update_meta_data('_taypi_environment', $this->taypi_environment);
             $order->save();
 
             // Reducir stock y vaciar carrito se hace cuando el webhook confirma el pago
@@ -312,7 +312,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
     /**
      * AJAX: crear sesión de checkout (fallback si process_payment no funciona con modal).
      */
-    public function ajax_create_session(): void
+    public function ajax_create_session()
     {
         check_ajax_referer('taypi_create_session', 'nonce');
 
@@ -351,7 +351,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
     /**
      * Procesar webhook de TAYPI (POST /wc-api/taypi_webhook).
      */
-    public function handle_webhook(): void
+    public function handle_webhook()
     {
         $payload   = file_get_contents('php://input');
         $signature = $_SERVER['HTTP_TAYPI_SIGNATURE'] ?? '';
@@ -359,7 +359,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
         $this->log('Webhook recibido: ' . substr($payload, 0, 500));
 
         // Verificar firma usando el SDK
-        if (empty($this->webhook_secret) || ! \Taypi\Taypi::verifyWebhook($payload, $signature, $this->webhook_secret)) {
+        if (empty($this->taypi_webhook_secret) || ! \Taypi\Taypi::verifyWebhook($payload, $signature, $this->taypi_webhook_secret)) {
             $this->log('Webhook: firma inválida.');
             status_header(403);
             echo wp_json_encode(['error' => 'Firma inválida']);
@@ -367,8 +367,8 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
         }
 
         // Parsear método estático no existe en SDK, verificar directamente
-        $client = new \Taypi\Taypi($this->public_key, $this->secret_key);
-        if (! $client->verifyWebhook($payload, $signature, $this->webhook_secret)) {
+        $client = new \Taypi\Taypi($this->taypi_public_key, $this->taypi_secret_key);
+        if (! $client->verifyWebhook($payload, $signature, $this->taypi_webhook_secret)) {
             $this->log('Webhook: firma inválida (2nd check).');
             status_header(403);
             exit;
@@ -445,9 +445,9 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
     /**
      * Obtener URL base según el entorno configurado.
      */
-    private function get_base_url(): string
+    private function get_base_url()
     {
-        switch ($this->environment) {
+        switch ($this->taypi_environment) {
             case 'production':
                 return 'https://app.taypi.pe';
             case 'custom':
@@ -462,27 +462,27 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
     /**
      * Obtener cliente SDK de TAYPI.
      */
-    private function get_client(): \Taypi\Taypi
+    private function get_client()
     {
-        if ($this->client === null) {
+        if ($this->taypi_client === null) {
             $base_url = $this->get_base_url();
 
-            $this->client = new \Taypi\Taypi(
-                $this->public_key,
-                $this->secret_key,
+            $this->taypi_client = new \Taypi\Taypi(
+                $this->taypi_public_key,
+                $this->taypi_secret_key,
                 ['base_url' => $base_url]
             );
         }
 
-        return $this->client;
+        return $this->taypi_client;
     }
 
     /**
      * Log si debug está activado.
      */
-    private function log(string $message): void
+    private function log(string $message)
     {
-        if ($this->debug === 'yes') {
+        if ($this->taypi_debug === 'yes') {
             $logger = wc_get_logger();
             $logger->info($message, ['source' => 'taypi']);
         }

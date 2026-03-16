@@ -1,0 +1,17 @@
+{
+    "name": "taypi/taypi-woocommerce",
+    "description": "TAYPI Payment Gateway for WooCommerce",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=7.4",
+        "taypi/taypi-php": "^1.0"
+    },
+    "autoload": {
+        "classmap": ["includes/"]
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    }
+}

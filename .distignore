@@ -1,0 +1,13 @@
+/.wordpress-org
+/.github
+/.git
+/.gitignore
+/.distignore
+/composer.json
+/composer.lock
+/node_modules
+/tests
+/phpunit.xml
+/phpcs.xml
+/.env
+/.env.example

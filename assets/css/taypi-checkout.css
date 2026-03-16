@@ -1,0 +1,21 @@
+/**
+ * TAYPI Checkout — Estilos WooCommerce
+ */
+
+/* Badge de sandbox en checkout */
+.payment_method_taypi .woocommerce-SavedPaymentMethods-saveNew {
+    display: none;
+}
+
+/* Logos de wallets */
+.taypi-wallets {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.taypi-wallets img {
+    height: 28px;
+    width: auto;
+}

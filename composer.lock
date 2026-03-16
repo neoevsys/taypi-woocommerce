@@ -1,0 +1,73 @@
+{
+    "_readme": [
+        "This file locks the dependencies of your project to a known state",
+        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
+        "This file is @generated automatically"
+    ],
+    "content-hash": "02383356b2f48e900c743b65799397bd",
+    "packages": [
+        {
+            "name": "taypi/taypi-php",
+            "version": "v1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/neoevsys/taypi-php.git",
+                "reference": "9eed5969b4baca13c8f5ca0df57cd4196c53b7d5"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/neoevsys/taypi-php/zipball/9eed5969b4baca13c8f5ca0df57cd4196c53b7d5",
+                "reference": "9eed5969b4baca13c8f5ca0df57cd4196c53b7d5",
+                "shasum": ""
+            },
+            "require": {
+                "ext-curl": "*",
+                "ext-json": "*",
+                "php": ">=7.4"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Taypi\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "NEO TECHNOLOGY PERÚ E.I.R.L.",
+                    "email": "soporte@neotecperu.com"
+                }
+            ],
+            "description": "SDK oficial de TAYPI — Pagos QR interoperables para e-commerce en Perú",
+            "homepage": "https://taypi.pe",
+            "keywords": [
+                "pagos",
+                "pasarela",
+                "peru",
+                "plin",
+                "qr",
+                "taypi",
+                "yape"
+            ],
+            "support": {
+                "issues": "https://github.com/neoevsys/taypi-php/issues",
+                "source": "https://github.com/neoevsys/taypi-php/tree/v1.0.0"
+            },
+            "time": "2026-03-14T04:43:19+00:00"
+        }
+    ],
+    "packages-dev": [],
+    "aliases": [],
+    "minimum-stability": "stable",
+    "stability-flags": [],
+    "prefer-stable": false,
+    "prefer-lowest": false,
+    "platform": {
+        "php": ">=7.4"
+    },
+    "platform-dev": [],
+    "plugin-api-version": "2.6.0"
+}

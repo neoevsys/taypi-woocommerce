@@ -12,8 +12,8 @@ defined('ABSPATH') || exit;
 
 class WC_Gateway_Taypi extends WC_Payment_Gateway
 {
-    /** @var string Entorno: 'yes' = sandbox, 'no' = producción */
-    private string $testmode;
+    /** @var string Entorno: production, sandbox, custom */
+    private string $environment;
 
     /** @var string Clave pública TAYPI */
     private string $public_key;
@@ -44,9 +44,9 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
 
         $this->title          = $this->get_option('title');
         $this->description    = $this->get_option('description');
-        $this->testmode       = $this->get_option('testmode');
-        $this->public_key     = $this->testmode === 'yes' ? $this->get_option('test_public_key') : $this->get_option('live_public_key');
-        $this->secret_key     = $this->testmode === 'yes' ? $this->get_option('test_secret_key') : $this->get_option('live_secret_key');
+        $this->environment    = $this->get_option('environment', 'sandbox');
+        $this->public_key     = $this->environment === 'production' ? $this->get_option('live_public_key') : $this->get_option('test_public_key');
+        $this->secret_key     = $this->environment === 'production' ? $this->get_option('live_secret_key') : $this->get_option('test_secret_key');
         $this->webhook_secret = $this->get_option('webhook_secret');
         $this->debug          = $this->get_option('debug');
 
@@ -91,12 +91,22 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
                 'description' => 'Descripción que ve el cliente al elegir este método.',
                 'default'     => 'Paga escaneando un código QR desde Yape, Plin o cualquier app bancaria.',
             ],
-            'testmode' => [
-                'title'       => 'Modo sandbox',
-                'type'        => 'checkbox',
-                'label'       => 'Activar modo de pruebas (sandbox)',
-                'default'     => 'yes',
-                'description' => 'Usa el entorno sandbox para pruebas sin cobros reales.',
+            'environment' => [
+                'title'       => 'Entorno',
+                'type'        => 'select',
+                'description' => 'Selecciona el entorno de TAYPI.',
+                'default'     => 'sandbox',
+                'options'     => [
+                    'production' => 'Producción (app.taypi.pe)',
+                    'sandbox'    => 'Sandbox (sandbox.taypi.pe)',
+                    'custom'     => 'Personalizado',
+                ],
+            ],
+            'custom_url' => [
+                'title'       => 'URL personalizada',
+                'type'        => 'text',
+                'description' => 'URL del entorno personalizado (ej: https://dev.taypi.pe). Solo visible si el entorno es "Personalizado".',
+                'default'     => '',
             ],
             'live_public_key' => [
                 'title'       => 'Public Key (producción)',
@@ -162,7 +172,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
         }
 
         // SSL obligatorio en producción
-        if ($this->testmode !== 'yes' && ! is_ssl()) {
+        if ($this->environment === 'production' && ! is_ssl()) {
             return false;
         }
 
@@ -174,9 +184,10 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
      */
     public function payment_fields(): void
     {
-        if ($this->testmode === 'yes') {
+        if ($this->environment !== 'production') {
+            $env_label = $this->environment === 'sandbox' ? 'SANDBOX' : strtoupper($this->environment);
             echo '<p style="background:#fff3cd;padding:8px 12px;border-radius:6px;font-size:13px;margin-bottom:12px;">'
-                . '⚠️ <strong>MODO SANDBOX</strong> — No se realizarán cobros reales.</p>';
+                . '⚠️ <strong>MODO ' . esc_html($env_label) . '</strong> — No se realizarán cobros reales.</p>';
         }
 
         if ($this->description) {
@@ -203,7 +214,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
             return;
         }
 
-        $base_url = $this->testmode === 'yes' ? 'https://sandbox.taypi.pe' : 'https://app.taypi.pe';
+        $base_url = $this->get_base_url();
 
         // SDK checkout.js de TAYPI (CDN)
         wp_enqueue_script(
@@ -432,12 +443,29 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
     }
 
     /**
+     * Obtener URL base según el entorno configurado.
+     */
+    private function get_base_url(): string
+    {
+        switch ($this->environment) {
+            case 'production':
+                return 'https://app.taypi.pe';
+            case 'custom':
+                $custom = $this->get_option('custom_url', '');
+                return ! empty($custom) ? rtrim($custom, '/') : 'https://sandbox.taypi.pe';
+            case 'sandbox':
+            default:
+                return 'https://sandbox.taypi.pe';
+        }
+    }
+
+    /**
      * Obtener cliente SDK de TAYPI.
      */
     private function get_client(): \Taypi\Taypi
     {
         if ($this->client === null) {
-            $base_url = $this->testmode === 'yes' ? 'https://sandbox.taypi.pe' : 'https://app.taypi.pe';
+            $base_url = $this->get_base_url();
 
             $this->client = new \Taypi\Taypi(
                 $this->public_key,

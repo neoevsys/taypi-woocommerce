@@ -410,7 +410,7 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
 
             case 'payment.expired':
                 if (! $order->is_paid() && $order->get_status() === 'pending') {
-                    $order->update_status('cancelled', 'Pago QR expirado (15 minutos).');
+                    $order->update_status('cancelled', 'Pago QR expirado (24 horas).');
                     $this->log("Webhook: orden #{$reference} cancelada por expiración.");
                 }
                 break;

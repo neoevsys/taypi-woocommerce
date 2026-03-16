@@ -113,7 +113,7 @@ https://tutienda.com/wc-api/taypi_webhook/
 | Monto minimo | S/ 1.00 |
 | Monto maximo | S/ 1,500.00 |
 | Moneda | PEN (Soles) |
-| Expiracion QR | 15 minutos |
+| Expiracion QR | 24 horas |
 
 Si el carrito supera S/ 1,500, el metodo de pago TAYPI no se muestra en el checkout.
 

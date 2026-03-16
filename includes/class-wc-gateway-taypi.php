@@ -358,19 +358,19 @@ class WC_Gateway_Taypi extends WC_Payment_Gateway
 
         $this->log('Webhook recibido: ' . substr($payload, 0, 500));
 
-        // Verificar firma usando el SDK
-        if (empty($this->taypi_webhook_secret) || ! \Taypi\Taypi::verifyWebhook($payload, $signature, $this->taypi_webhook_secret)) {
-            $this->log('Webhook: firma inválida.');
+        // Verificar firma HMAC-SHA256
+        if (empty($this->taypi_webhook_secret)) {
+            $this->log('Webhook: webhook_secret no configurado.');
             status_header(403);
-            echo wp_json_encode(['error' => 'Firma inválida']);
+            echo wp_json_encode(['error' => 'Webhook secret no configurado']);
             exit;
         }
 
-        // Parsear método estático no existe en SDK, verificar directamente
-        $client = new \Taypi\Taypi($this->taypi_public_key, $this->taypi_secret_key);
-        if (! $client->verifyWebhook($payload, $signature, $this->taypi_webhook_secret)) {
-            $this->log('Webhook: firma inválida (2nd check).');
+        $expected = 'sha256=' . hash_hmac('sha256', $payload, $this->taypi_webhook_secret);
+        if (! hash_equals($expected, $signature)) {
+            $this->log('Webhook: firma inválida.');
             status_header(403);
+            echo wp_json_encode(['error' => 'Firma inválida']);
             exit;
         }
 
